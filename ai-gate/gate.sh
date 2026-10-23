@@ -118,7 +118,7 @@ PROMPT_FILE=$(mktemp)
 
 CLAUDE_EXIT=0
 CLAUDE_RAW=$(timeout 180 claude -p "$(cat "$PROMPT_FILE")" \
-  --output-format text --no-update-check 2>&1) || CLAUDE_EXIT=$?
+  --output-format text 2>&1) || CLAUDE_EXIT=$?
 rm -f "$PROMPT_FILE"
 
 if [[ "$CLAUDE_EXIT" -eq 124 ]]; then
