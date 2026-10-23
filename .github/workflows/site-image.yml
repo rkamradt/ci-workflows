@@ -35,9 +35,44 @@ on:
     secrets:
       HELM_CHARTS_PAT:
         required: true
+      ANTHROPIC_API_KEY:
+        required: false
 
 jobs:
+  ai-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: rkamradt/ci-workflows
+          path: _gate
+          ref: main
+
+      - name: Install tools
+        run: |
+          GITLEAKS_VER=8.21.2
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER}_linux_x64.tar.gz" \
+            | tar xz -C /usr/local/bin gitleaks
+          KL_VER=0.6.8
+          mkdir -p /tmp/kl && \
+            curl -sSfL "https://github.com/stackrox/kube-linter/releases/download/v${KL_VER}/kube-linter_linux_amd64.tar.gz" \
+            | tar xz -C /tmp/kl && cp /tmp/kl/kube-linter /usr/local/bin/ 2>/dev/null || true
+          npm install -g @anthropic-ai/claude-code --quiet
+
+      - name: Run AI gate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GATE_DIR: ${{ github.workspace }}/_gate/ai-gate
+        run: bash _gate/ai-gate/gate.sh
+
   build-and-push:
+    needs: [ai-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
