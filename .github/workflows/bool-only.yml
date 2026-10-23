@@ -1,0 +1,19 @@
+name: Bool Only Test
+on:
+  workflow_call:
+    inputs:
+      helm-chart-dir:
+        required: true
+        type: string
+      push-latest:
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      HELM_CHARTS_PAT:
+        required: true
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "latest=${{ inputs.push-latest }}"
