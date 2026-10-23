@@ -18,7 +18,7 @@ on:
         type: string
         default: '.'
       build-args:
-        description: 'Docker build-args (KEY=VALUE lines, secrets interpolated by caller)'
+        description: 'Docker build-args (hardcoded KEY=VALUE lines only; secrets are appended automatically)'
         required: false
         type: string
         default: ''
@@ -67,13 +67,37 @@ jobs:
           fi
           echo "tags=$T" >> $GITHUB_OUTPUT
 
+      - name: Collect build-args
+        id: collect-args
+        env:
+          BASE: ${{ inputs.build-args }}
+          VITE_KEYCLOAK_URL: ${{ secrets.VITE_KEYCLOAK_URL }}
+          VITE_KEYCLOAK_REALM: ${{ secrets.VITE_KEYCLOAK_REALM }}
+          VITE_KEYCLOAK_CLIENT_ID: ${{ secrets.VITE_KEYCLOAK_CLIENT_ID }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          SECRET_AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
+        run: |
+          ARGS="$BASE"
+          [ -n "$VITE_KEYCLOAK_URL" ]       && ARGS="${ARGS}"$'\n'"VITE_KEYCLOAK_URL=${VITE_KEYCLOAK_URL}"
+          [ -n "$VITE_KEYCLOAK_REALM" ]     && ARGS="${ARGS}"$'\n'"VITE_KEYCLOAK_REALM=${VITE_KEYCLOAK_REALM}"
+          [ -n "$VITE_KEYCLOAK_CLIENT_ID" ] && ARGS="${ARGS}"$'\n'"VITE_KEYCLOAK_CLIENT_ID=${VITE_KEYCLOAK_CLIENT_ID}"
+          [ -n "$VITE_API_URL" ]            && ARGS="${ARGS}"$'\n'"VITE_API_URL=${VITE_API_URL}"
+          [ -n "$VITE_GOOGLE_CLIENT_ID" ]   && ARGS="${ARGS}"$'\n'"VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}"
+          [ -n "$SECRET_AUTH0_CLIENT_ID" ]  && ARGS="${ARGS}"$'\n'"REACT_APP_AUTH0_CLIENT_ID=${SECRET_AUTH0_CLIENT_ID}"
+          {
+            echo 'args<<EOF'
+            printf '%s\n' "$ARGS"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: docker/build-push-action@v6
         with:
           context: ${{ inputs.docker-context }}
           push: true
           no-cache: ${{ inputs.no-cache }}
           tags: ${{ steps.tags.outputs.tags }}
-          build-args: ${{ inputs.build-args }}
+          build-args: ${{ steps.collect-args.outputs.args }}
 
       - name: Update version-values.yaml in helm-charts
         run: |
