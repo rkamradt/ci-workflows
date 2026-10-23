@@ -1,0 +1,90 @@
+name: Build and Push Site Image
+
+on:
+  workflow_call:
+    inputs:
+      helm-chart-dir:
+        description: 'Directory in rkamradt-helm-charts to update'
+        required: true
+        type: string
+      image-name:
+        description: 'Full image name; defaults to ghcr.io/<calling-repo>'
+        required: false
+        type: string
+        default: ''
+      docker-context:
+        description: 'Docker build context path'
+        required: false
+        type: string
+        default: '.'
+      build-args:
+        description: 'Docker build-args (KEY=VALUE lines, secrets interpolated by caller)'
+        required: false
+        type: string
+        default: ''
+      no-cache:
+        description: 'Disable Docker layer cache'
+        required: false
+        type: boolean
+        default: false
+      push-latest:
+        description: 'Also push :latest tag'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      HELM_CHARTS_PAT:
+        required: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Resolve image name
+        id: image
+        run: |
+          NAME="${{ inputs.image-name }}"
+          echo "name=${NAME:-ghcr.io/${{ github.repository }}}" >> $GITHUB_OUTPUT
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build tags string
+        id: tags
+        run: |
+          T="${{ steps.image.outputs.name }}:${{ steps.tag.outputs.tag }}"
+          if [ "${{ inputs.push-latest }}" = "true" ]; then
+            T="$T,${{ steps.image.outputs.name }}:latest"
+          fi
+          echo "tags=$T" >> $GITHUB_OUTPUT
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.docker-context }}
+          push: true
+          no-cache: ${{ inputs.no-cache }}
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: ${{ inputs.build-args }}
+
+      - name: Update version-values.yaml in helm-charts
+        run: |
+          git clone https://x-access-token:${{ secrets.HELM_CHARTS_PAT }}@github.com/rkamradt/rkamradt-helm-charts.git
+          cd rkamradt-helm-charts
+          printf 'image:\n  tag: "%s"\n' "${{ steps.tag.outputs.tag }}" > ${{ inputs.helm-chart-dir }}/version-values.yaml
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add ${{ inputs.helm-chart-dir }}/version-values.yaml
+          git diff --cached --quiet && echo "No change" || { git commit -m "Update ${{ inputs.helm-chart-dir }} image tag to ${{ steps.tag.outputs.tag }}" && git push; }
